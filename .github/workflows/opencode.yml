@@ -1,0 +1,69 @@
+name: opencode
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  opencode:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+       - name: Checkout repository
+         uses: actions/checkout@v6
+         with:
+           persist-credentials: false
+
+       # 关键步骤：在运行 OpenCode 之前，创建或修改配置文件
+       - name: Configure OpenCode for custom model
+         run: |
+          # 创建 OpenCode 的配置目录
+          mkdir -p ~/.config/opencode
+          
+          # 写入配置文件，不包含任何注释
+          cat > ~/.config/opencode/opencode.json << 'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "custom-provider/Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf",
+            "provider": {
+              "custom-provider": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "My Custom Model",
+                "options": {
+                  "baseURL": "http://118.252.19.92:44331/v1",
+                  "apiKey": "{env:CUSTOM_MODEL_API_KEY}"
+                },
+                "models": {
+                  "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf": {
+                    "id": "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf",
+                    "name": "Qwen3.5 397B"
+                  }
+                }
+              }
+            }
+          }
+          EOF
+          echo "✅ OpenCode 配置文件已写入"
+
+       # 现在运行 OpenCode Action，它会读取我们刚才创建的配置
+       - name: Run OpenCode
+         uses: anomalyco/opencode/github@latest
+         env:
+           # 不再需要 ANTHROPIC_API_KEY
+           # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+           # 传递你的自定义模型 API Key
+           CUSTOM_MODEL_API_KEY: ${{ secrets.CUSTOM_MODEL_API_KEY }}
+           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+         with:
+           # model 参数可以留空，或者与配置文件中的保持一致
+           model: "custom-provider/Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf"
+           use_github_token: true
+           prompt: |
+            Review this pull request:
+            - Check for code quality issues
+            - Look for potential bugs
+            - Suggest improvements
