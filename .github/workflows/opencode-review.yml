@@ -40,7 +40,7 @@ jobs:
       
       - name: Install OpenCode CLI
         run: |
-          npm install -g @opencode/cli
+          npm install -g opencode-ai@latest
           echo "✅ OpenCode CLI installed"
       
       - name: Configure OpenCode
