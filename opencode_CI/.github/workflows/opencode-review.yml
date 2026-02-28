@@ -1,0 +1,170 @@
+# OpenCode 自动化代码审查 Workflow
+name: OpenCode Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, master, develop]
+  
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request 编号'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: '20'
+  OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install OpenClaw
+        run: |
+          npm install -g openclaw@latest
+          echo "✅ OpenClaw installed"
+      
+      - name: Configure OpenCode Zen
+        run: |
+          echo "🔧 配置 OpenCode Zen..."
+          echo "OPENCODE_API_KEY=${{ secrets.OPENCODE_API_KEY }}" >> ~/.openclaw/openclaw.json.env
+          echo "✅ OpenCode Zen 配置完成"
+      
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: |
+            **/*.js
+            **/*.ts
+            **/*.jsx
+            **/*.tsx
+            **/*.py
+            **/*.go
+            **/*.rs
+            **/*.java
+            **/*.cpp
+            **/*.h
+            **/*.hpp
+      
+      - name: Code Review with OpenClaw
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "📝 开始代码审查..."
+          echo "变更文件数：${{ steps.changed-files.outputs.all_changed_files_count }}"
+          
+          # 创建审查报告
+          REVIEW_REPORT="code_review_report.md"
+          
+          cat > $REVIEW_REPORT << 'EOF'
+          # 🤖 OpenCode 代码审查报告
+          
+          ## 基本信息
+          - **PR**: #${{ github.event.pull_request.number }}
+          - **标题**: ${{ github.event.pull_request.title }}
+          - **作者**: @${{ github.event.pull_request.user.login }}
+          - **分支**: `${{ github.event.pull_request.head.ref }}` → `${{ github.event.pull_request.base.ref }}`
+          - **变更文件**: ${{ steps.changed-files.outputs.all_changed_files_count }}
+          
+          ## 审查详情
+          
+          EOF
+          
+          # 审查每个变更的文件
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            if [[ -f "$file" ]]; then
+              echo "🔍 审查文件：$file"
+              echo "" >> $REVIEW_REPORT
+              echo "### 📄 文件：\`$file\`" >> $REVIEW_REPORT
+              echo "" >> $REVIEW_REPORT
+              
+              # 使用 OpenClaw 进行 AI 审查
+              openclaw run "请审查这个文件的代码质量，关注：
+              1. 代码风格和规范性
+              2. 潜在的 bug 和错误
+              3. 性能优化建议
+              4. 安全漏洞
+              5. 可维护性改进建议
+              
+              文件路径：$file
+              
+              请用简洁的中文列出发现的问题和建议。" 2>&1 | tee -a $REVIEW_REPORT
+              
+              echo "" >> $REVIEW_REPORT
+              echo "---" >> $REVIEW_REPORT
+              echo "" >> $REVIEW_REPORT
+            fi
+          done
+          
+          # 总结信息
+          cat >> $REVIEW_REPORT << 'EOF'
+          
+          ## 📋 总结
+          
+          EOF
+          
+          if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt 0 ]]; then
+            echo "✅ 审查完成" >> $REVIEW_REPORT
+          else
+            echo "⚠️ 未检测到变更文件" >> $REVIEW_REPORT
+          fi
+          
+          echo "" >> $REVIEW_REPORT
+          echo "---" >> $REVIEW_REPORT
+          echo "**审查时间**: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $REVIEW_REPORT
+          echo "**OpenCode CI**" >> $REVIEW_REPORT
+          
+          # 输出报告
+          echo "✅ 代码审查完成"
+          cat $REVIEW_REPORT
+      
+      - name: Upload review report
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-review-report
+          path: code_review_report.md
+          retention-days: 30
+      
+      - name: Post review comment to PR
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: code_review_report.md
+          comment_tag: code_review
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Summary
+        run: |
+          echo "## 📊 代码审查总结" >> $GITHUB_STEP_SUMMARY
+          echo "- 变更文件数: ${{ steps.changed-files.outputs.all_changed_files_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 审查状态: ✅ 完成" >> $GITHUB_STEP_SUMMARY
+          echo "- 审查报告: 已发布到 PR 评论" >> $GITHUB_STEP_SUMMARY
+
+  no-changes:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false && github.event_name == 'pull_request'
+    steps:
+      - name: Check for changes
+        run: |
+          echo "⚠️ 没有检测到代码变更或 PR 为 draft 状态"
