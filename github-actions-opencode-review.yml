@@ -1,0 +1,147 @@
+# GitHub Actions Workflow for OpenCode Code Review
+# 用于代码审查的 GitHub Actions 工作流
+
+name: OpenCode Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, master, develop]
+  
+  # 也支持手动触发
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request 编号'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: '20'
+  OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install OpenClaw
+        run: |
+          npm install -g openclaw@latest
+          echo "✅ OpenClaw installed"
+      
+      - name: Configure OpenClaw with OpenCode Zen
+        run: |
+          openclaw onboard --auth-choice opencode-zen
+          echo "✅ OpenClaw configured with OpenCode Zen"
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+      
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: |
+            **/*.js
+            **/*.ts
+            **/*.jsx
+            **/*.tsx
+            **/*.py
+            **/*.go
+            **/*.rs
+            **/*.java
+            **/*.cpp
+            **/*.h
+            **/*.hpp
+      
+      - name: Code Review with OpenClaw
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          echo "📝 Starting code review..."
+          echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
+          
+          # 创建代码审查报告
+          REVIEW_REPORT="code_review_report.md"
+          
+          # 使用 OpenClaw 进行代码审查
+          cat > $REVIEW_REPORT << 'EOF'
+          # 代码审查报告
+          
+          ## 变更概览
+          - PR: #${{ github.event.pull_request.number }}
+          - 标题: ${{ github.event.pull_request.title }}
+          - 作者: @${{ github.event.pull_request.user.login }}
+          - 变更文件数: ${{ steps.changed-files.outputs.all_changed_files_count }}
+          
+          ## 审查意见
+          
+          EOF
+          
+          # 对每个变更的文件进行审查
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            if [[ -f "$file" ]]; then
+              echo "🔍 审查文件：$file"
+              echo "" >> $REVIEW_REPORT
+              echo "### 文件：\`$file\`" >> $REVIEW_REPORT
+              echo "" >> $REVIEW_REPORT
+              
+              # 使用 OpenClaw 分析文件
+              openclaw run "请审查这个文件的代码质量和潜在问题，关注：1) 代码风格 2) 潜在 bug 3) 性能问题 4) 安全漏洞 5) 可维护性。文件路径：$file" 2>&1 | tee -a $REVIEW_REPORT
+            fi
+          done
+          
+          # 输出审查报告
+          echo "" >> $REVIEW_REPORT
+          echo "---" >> $REVIEW_REPORT
+          echo "审查完成时间: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $REVIEW_REPORT
+          
+          echo "✅ 代码审查完成"
+          cat $REVIEW_REPORT
+      
+      - name: Upload review report
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-review-report
+          path: code_review_report.md
+          retention-days: 30
+      
+      - name: Post review comment to PR
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: code_review_report.md
+          comment_tag: code_review
+      
+      - name: Summary
+        run: |
+          echo "## 代码审查总结" >> $GITHUB_STEP_SUMMARY
+          echo "- 变更文件数: ${{ steps.changed-files.outputs.all_changed_files_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "- 审查状态: 完成 ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- 审查报告已上传到 PR 评论" >> $GITHUB_STEP_SUMMARY
+
+  # 如果没有变更的文件
+  no-changes:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false && github.event_name == 'pull_request'
+    steps:
+      - name: Check for changes
+        run: |
+          echo "⚠️ 没有检测到代码变更，跳过审查"
