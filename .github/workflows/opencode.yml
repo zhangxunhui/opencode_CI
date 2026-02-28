@@ -36,11 +36,11 @@ jobs:
                  "name": "My Custom Model",
                  "options": {
                    "baseURL": "http://118.252.19.92:44331/v1", # 你的模型 API 地址，必须以 /v1 结尾 [citation:5]
-                   "apiKey": "{env:CUSTOM_MODEL_API_KEY}" # 从环境变量读取 API Key
+                   "apiKey": "{env:CUSTOM_MODEL_API_KEY}" 
                  },
                  "models": {
                    "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf": { # 这里的键对应上面的 "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf"
-                     "id": "{env:CUSTOM_MODEL_API_KEY}", # 实际请求时用的模型 ID
+                     "id": "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf",
                      "name": "Display Name"
                    }
                  }
