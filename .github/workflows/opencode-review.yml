@@ -38,16 +38,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       
-      - name: Install OpenClaw
+      - name: Install OpenCode CLI
         run: |
-          npm install -g openclaw@latest
-          echo "✅ OpenClaw installed"
+          npm install -g @opencode/cli
+          echo "✅ OpenCode CLI installed"
       
-      - name: Configure OpenCode Zen
+      - name: Configure OpenCode
         run: |
-          echo "🔧 配置 OpenCode Zen..."
-          echo "OPENCODE_API_KEY=${{ secrets.OPENCODE_API_KEY }}" >> ~/.openclaw/openclaw.json.env
-          echo "✅ OpenCode Zen 配置完成"
+          echo "🔧 配置 OpenCode..."
+          # 创建 OpenCode 配置文件
+          mkdir -p ~/.opencode
+          cat > ~/.opencode/config.json << EOF
+          {
+            "apiKey": "${{ secrets.OPENCODE_API_KEY }}",
+            "baseUrl": "https://api.opencode.com/v1"
+          }
+          EOF
+          echo "✅ OpenCode 配置完成"
       
       - name: Get changed files
         id: changed-files
@@ -65,8 +72,16 @@ jobs:
             **/*.cpp
             **/*.h
             **/*.hpp
+            **/*.c
+            **/*.cs
+            **/*.php
+            **/*.rb
+            **/*.swift
+            **/*.kt
+            **/*.kts
+            **/*.scala
       
-      - name: Code Review with OpenClaw
+      - name: Code Review with OpenCode
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           echo "📝 开始代码审查..."
@@ -89,25 +104,44 @@ jobs:
           
           EOF
           
-          # 审查每个变更的文件
-          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+          # 收集所有变更文件进行批量审查
+          CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+          
+          # 使用 OpenCode CLI 进行批量代码审查
+          echo "### 📊 批量代码审查结果" >> $REVIEW_REPORT
+          echo "" >> $REVIEW_REPORT
+          
+          # 执行 OpenCode 审查
+          npx @opencode/cli review \
+            --files $CHANGED_FILES \
+            --format markdown \
+            --output review_results.md
+          
+          # 将审查结果追加到报告
+          if [ -f "review_results.md" ]; then
+            cat review_results.md >> $REVIEW_REPORT
+          else
+            echo "⚠️ OpenCode 审查未生成结果文件" >> $REVIEW_REPORT
+          fi
+          
+          # 添加文件级别的详细审查（如果需要更详细的审查）
+          echo "" >> $REVIEW_REPORT
+          echo "## 📝 详细文件审查" >> $REVIEW_REPORT
+          echo "" >> $REVIEW_REPORT
+          
+          # 逐个文件进行详细审查
+          for file in $CHANGED_FILES; do
             if [[ -f "$file" ]]; then
-              echo "🔍 审查文件：$file"
+              echo "🔍 详细审查文件：$file"
               echo "" >> $REVIEW_REPORT
               echo "### 📄 文件：\`$file\`" >> $REVIEW_REPORT
               echo "" >> $REVIEW_REPORT
               
-              # 使用 OpenClaw 进行 AI 审查
-              openclaw run "请审查这个文件的代码质量，关注：
-              1. 代码风格和规范性
-              2. 潜在的 bug 和错误
-              3. 性能优化建议
-              4. 安全漏洞
-              5. 可维护性改进建议
-              
-              文件路径：$file
-              
-              请用简洁的中文列出发现的问题和建议。" 2>&1 | tee -a $REVIEW_REPORT
+              # 使用 OpenCode 进行单文件详细审查
+              npx @opencode/cli analyze \
+                --file "$file" \
+                --rules "code-style,potential-bugs,performance,security,maintainability" \
+                --format markdown >> $REVIEW_REPORT
               
               echo "" >> $REVIEW_REPORT
               echo "---" >> $REVIEW_REPORT
@@ -118,12 +152,14 @@ jobs:
           # 总结信息
           cat >> $REVIEW_REPORT << 'EOF'
           
-          ## 📋 总结
+          ## 📋 审查总结
           
           EOF
           
           if [[ "${{ steps.changed-files.outputs.all_changed_files_count }}" -gt 0 ]]; then
-            echo "✅ 审查完成" >> $REVIEW_REPORT
+            echo "- ✅ 批量审查完成" >> $REVIEW_REPORT
+            echo "- ✅ 详细文件审查完成" >> $REVIEW_REPORT
+            echo "- 📊 总审查文件数: ${{ steps.changed-files.outputs.all_changed_files_count }}" >> $REVIEW_REPORT
           else
             echo "⚠️ 未检测到变更文件" >> $REVIEW_REPORT
           fi
@@ -131,7 +167,7 @@ jobs:
           echo "" >> $REVIEW_REPORT
           echo "---" >> $REVIEW_REPORT
           echo "**审查时间**: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $REVIEW_REPORT
-          echo "**OpenCode CI**" >> $REVIEW_REPORT
+          echo "**Powered by OpenCode CI**" >> $REVIEW_REPORT
           
           # 输出报告
           echo "✅ 代码审查完成"
@@ -142,7 +178,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: code-review-report
-          path: code_review_report.md
+          path: |
+            code_review_report.md
+            review_results.md
           retention-days: 30
       
       - name: Post review comment to PR
@@ -150,15 +188,16 @@ jobs:
         uses: thollander/actions-comment-pull-request@v2
         with:
           filePath: code_review_report.md
-          comment_tag: code_review
+          comment_tag: opencode_review
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Summary
         run: |
-          echo "## 📊 代码审查总结" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 OpenCode 代码审查总结" >> $GITHUB_STEP_SUMMARY
           echo "- 变更文件数: ${{ steps.changed-files.outputs.all_changed_files_count }}" >> $GITHUB_STEP_SUMMARY
           echo "- 审查状态: ✅ 完成" >> $GITHUB_STEP_SUMMARY
           echo "- 审查报告: 已发布到 PR 评论" >> $GITHUB_STEP_SUMMARY
+          echo "- 审查工具: OpenCode AI" >> $GITHUB_STEP_SUMMARY
 
   no-changes:
     runs-on: ubuntu-latest
@@ -167,3 +206,5 @@ jobs:
       - name: Check for changes
         run: |
           echo "⚠️ 没有检测到代码变更或 PR 为 draft 状态"
+          echo "## ⚠️ OpenCode 代码审查跳过" >> $GITHUB_STEP_SUMMARY
+          echo "没有检测到需要审查的代码文件变更" >> $GITHUB_STEP_SUMMARY
