@@ -21,34 +21,33 @@ jobs:
        # 关键步骤：在运行 OpenCode 之前，创建或修改配置文件
        - name: Configure OpenCode for custom model
          run: |
-           # 创建 OpenCode 的配置目录
-           mkdir -p ~/.config/opencode
-           
-           # 写入配置文件，指向你的自部署模型
-           # 假设你的模型服务运行在 http://118.252.19.92:44331/v1 且兼容 OpenAI 接口
-           cat > ~/.config/opencode/opencode.json << 'EOF'
-           {
-             "$schema": "https://opencode.ai/config.json",
-             "model": "custom-provider/Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf", # 格式：provider名/模型ID
-             "provider": {
-               "custom-provider": { # 自定义 provider 名称
-                 "npm": "@ai-sdk/openai-compatible", # 使用 OpenAI 兼容 SDK
-                 "name": "My Custom Model",
-                 "options": {
-                   "baseURL": "http://118.252.19.92:44331/v1", # 你的模型 API 地址，必须以 /v1 结尾 [citation:5]
-                   "apiKey": "{env:CUSTOM_MODEL_API_KEY}" 
-                 },
-                 "models": {
-                   "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf": { # 这里的键对应上面的 "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf"
-                     "id": "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf",
-                     "name": "Display Name"
-                   }
-                 }
-               }
-             }
-           }
-           EOF
-           echo "✅ OpenCode 配置文件已写入"
+          # 创建 OpenCode 的配置目录
+          mkdir -p ~/.config/opencode
+          
+          # 写入配置文件，不包含任何注释
+          cat > ~/.config/opencode/opencode.json << 'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "model": "custom-provider/Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf",
+            "provider": {
+              "custom-provider": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "My Custom Model",
+                "options": {
+                  "baseURL": "http://118.252.19.92:44331/v1",
+                  "apiKey": "{env:CUSTOM_MODEL_API_KEY}"
+                },
+                "models": {
+                  "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf": {
+                    "id": "Qwen3.5-397B-A17B-UD-Q4_K_XL-00001-of-00006.gguf",
+                    "name": "Qwen3.5 397B"
+                  }
+                }
+              }
+            }
+          }
+          EOF
+          echo "✅ OpenCode 配置文件已写入"
 
        # 现在运行 OpenCode Action，它会读取我们刚才创建的配置
        - name: Run OpenCode
